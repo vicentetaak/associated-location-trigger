@@ -18,7 +18,7 @@ public class AssociatedLocationTriggerHelper {
         List<AccountTeamMember> newAccountTeamMembers = new List<AccountTeamMember>();
         for(Associated_location__c uniqueAssociatedLocation : uniqueAssociatedLocationsMap.values()) {
             AccountTeamMember accountTeamMember = accountTeamMemberMap.get(uniqueAssociatedLocation.Account__c + '-' + uniqueAssociatedLocation.User__c);
-            if(accountTeamMember == null) {
+            if(accountTeamMember == null && String.isNotBlank(uniqueAssociatedLocation.User__c)) {
                 newAccountTeamMembers.add(new AccountTeamMember(
                     AccountId = uniqueAssociatedLocation.Account__c,
                     UserId = uniqueAssociatedLocation.User__c
@@ -29,8 +29,64 @@ public class AssociatedLocationTriggerHelper {
         insert newAccountTeamMembers;
     }
 
-    public static void handleAfterUpdateAccountTeamMember(List<Associated_location__c> newAssociatedLocations, Map<Id,Associated_Location__c> oldAssociatedLocations){
-        
+    public static void handleAfterUpdateAccountTeamMember(List<Associated_location__c> newAssociatedLocations, Map<Id,Associated_Location__c> oldAssociatedLocationsMap){
+        Set<Id> newUserIds = new Set<Id>();
+        Set<Id> newAccountIds = new Set<Id>();
+        for(Associated_location__c newAssociatedLocation : newAssociatedLocations) {
+            Associated_location__c oldAssociatedLocation = oldAssociatedLocationsMap.get(newAssociatedLocation.Id);
+            if(oldAssociatedLocation != null) {
+                if(newAssociatedLocation.User__c != oldAssociatedLocation.User__c || newAssociatedLocation.Account__c != oldAssociatedLocation.Account__c) {
+                    newUserIds.add(newAssociatedLocation.User__c);
+                    newAccountIds.add(newAssociatedLocation.Account__c);
+                }
+            }
+        }
+
+        List<AccountTeamMember> accountsTeamMembers = [SELECT AccountId, UserId FROM AccountTeamMember WHERE AccountId IN :newAccountIds AND UserId IN :newUserIds];
+        List<Associated_location__c> associatedLocations = [SELECT Account__c, User__c FROM Associated_location__c WHERE Account__c IN :newAccountIds AND User__c IN :newUserIds];
+        Map<String, AccountTeamMember> accountTeamMemberMap = new Map<String, AccountTeamMember>();
+        for(AccountTeamMember accountTeamMember : accountsTeamMembers) {
+            accountTeamMemberMap.put(accountTeamMember.AccountId + '-' + accountTeamMember.UserId, accountTeamMember);
+        }
+
+        List<AccountTeamMember> accountTeamMembersToUpdate = new List<AccountTeamMember>();
+        for(Associated_location__c associatedLocation : associatedLocations) {
+            if(accountTeamMemberMap.get(associatedLocation.Account__c + '-' + associatedLocation.User__c) == null && String.isNotBlank(associatedLocation.User__c)) {
+                AccountTeamMember accountTeamMember = new AccountTeamMember(
+                    AccountId = associatedLocation.Account__c,
+                    UserId = associatedLocation.User__c
+                );
+                accountTeamMembersToUpdate.add(accountTeamMember);
+                accountTeamMemberMap.put(associatedLocation.Account__c + '-' + associatedLocation.User__c, accountTeamMember);
+            }
+        }
+
+        Set<Id> oldAccountIds = new Set<Id>();
+        Set<Id> oldUserIds = new Set<Id>();
+        for(Associated_location__c oldAssociatedLocation : oldAssociatedLocationsMap.values()) {
+            if(oldAssociatedLocation != null) {
+                oldAccountIds.add(oldAssociatedLocation.Account__c);
+                oldUserIds.add(oldAssociatedLocation.User__c);
+            }
+        }
+
+        List<AccountTeamMember> oldAccountTeamMembers = [SELECT Id, AccountId, UserId FROM AccountTeamMember WHERE AccountId IN :oldAccountIds AND UserId IN :oldUserIds];
+        List<Associated_location__c> oldAssociatedLocations = [SELECT Account__c, User__c FROM Associated_location__c WHERE Account__c IN :oldAccountIds AND User__c IN :oldUserIds];
+        Map<String, Associated_location__c> oldAssociatedLocationMap = new Map<String, Associated_location__c>();
+        for(Associated_location__c oldAssociatedLocation : oldAssociatedLocations) {
+            oldAssociatedLocationMap.put(oldAssociatedLocation.Account__c + '-' + oldAssociatedLocation.User__c, oldAssociatedLocation);
+        }
+
+        if(!oldAccountTeamMembers.isEmpty()){
+        List<AccountTeamMember> accountTeamMembersToDelete = new List<AccountTeamMember>();
+            for(AccountTeamMember oldAccountTeamMember : oldAccountTeamMembers) {
+                if(oldAssociatedLocationMap.get(oldAccountTeamMember.AccountId + '-' + oldAccountTeamMember.UserId) == null) {
+                    accountTeamMembersToDelete.add(oldAccountTeamMember);
+                }
+            }
+            delete accountTeamMembersToDelete;
+        }
+        insert accountTeamMembersToUpdate;
     }
 
     public static void handleAfterDeleteAccountTeamMember(List<Associated_location__c> oldAssociatedLocations){
@@ -51,7 +107,7 @@ public class AssociatedLocationTriggerHelper {
         for(AccountTeamMember accountTeamMember : [SELECT Id, AccountId, UserId FROM AccountTeamMember WHERE AccountId IN :accountIds AND UserId IN :userIds]) {
             Associated_location__c associatedLocation = associatedLocationMap.get(accountTeamMember.AccountId + '-' + accountTeamMember.UserId);
             if(associatedLocation == null) {
-                accountTeamMembersToDelete.add(new AccountTeamMember(Id=accountTeamMember.Id));
+                accountTeamMembersToDelete.add(accountTeamMember);
             }
         }
         delete accountTeamMembersToDelete;
