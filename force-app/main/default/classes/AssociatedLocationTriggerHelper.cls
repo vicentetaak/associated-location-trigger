@@ -1,8 +1,9 @@
 public class AssociatedLocationTriggerHelper {
-    public static void handleAfterInsertAccountTeamMember(List<Associated_location__c> newAssociatedLocations){
+    public static void handleAfterInsertAccountTeamMember(List<Associated_location__c> newAssociatedLocations) {
         Set<Id> accountIds = new Set<Id>();
         Set<Id> userIds = new Set<Id>();
         Map<String, Associated_location__c> uniqueAssociatedLocationsMap = new Map<String, Associated_location__c>();
+
         for(Associated_location__c associatedLocation : newAssociatedLocations) {
             accountIds.add(associatedLocation.Account__c);
             userIds.add(associatedLocation.User__c);
@@ -10,7 +11,9 @@ public class AssociatedLocationTriggerHelper {
         }
 
         List<AccountTeamMember> accountTeamMembers = [SELECT AccountId, UserId FROM AccountTeamMember WHERE AccountId IN :accountIds AND UserId IN :userIds];
+
         Map<String, AccountTeamMember> accountTeamMemberMap = new Map<String, AccountTeamMember>();
+
         for(AccountTeamMember accountTeamMember : accountTeamMembers) {
             accountTeamMemberMap.put(accountTeamMember.AccountId + '-' + accountTeamMember.UserId, accountTeamMember);
         }
@@ -18,15 +21,36 @@ public class AssociatedLocationTriggerHelper {
         List<AccountTeamMember> newAccountTeamMembers = new List<AccountTeamMember>();
         for(Associated_location__c uniqueAssociatedLocation : uniqueAssociatedLocationsMap.values()) {
             AccountTeamMember accountTeamMember = accountTeamMemberMap.get(uniqueAssociatedLocation.Account__c + '-' + uniqueAssociatedLocation.User__c);
+            
             if(accountTeamMember == null && String.isNotBlank(uniqueAssociatedLocation.User__c)) {
                 newAccountTeamMembers.add(new AccountTeamMember(
                     AccountId = uniqueAssociatedLocation.Account__c,
                     UserId = uniqueAssociatedLocation.User__c
                 ));
             }
+        }   
+
+        List<Database.SaveResult> results = Database.insert(records, false);
+        for (Database.SaveResult result : results) {
+            if (!result.isSuccess()) {
+                System.debug('failed to insert: ' + objectType);
+                return false;
+            }
         }
 
-        insert newAccountTeamMembers;
+        // List<Database.SaveResult> results = Database.insert(records, false); //allOrNone
+        // for (Database.SaveResult result : results) {
+        //     if (!result.isSuccess() && result.getId()) {
+        //         System.debug('failed to insert: ' + objectType);
+        //         return false;
+        //     }
+        // }
+
+        try {
+            insert newAccountTeamMembers;
+        } catch(Exception e){
+            System.debug('Exception occurred while inserting AccountTeamMember: ' + e.getMessage() + e.getStackTraceString());
+        }
     }
 
     public static void handleAfterUpdateAccountTeamMember(List<Associated_location__c> newAssociatedLocations, Map<Id,Associated_Location__c> oldAssociatedLocationsMap){
@@ -49,6 +73,7 @@ public class AssociatedLocationTriggerHelper {
         List<AccountTeamMember> accountsTeamMembers = [SELECT AccountId, UserId FROM AccountTeamMember WHERE AccountId IN :newAccountIds AND UserId IN :newUserIds];
         List<Associated_location__c> associatedLocations = [SELECT Account__c, User__c FROM Associated_location__c WHERE Account__c IN :newAccountIds AND User__c IN :newUserIds];
         Map<String, AccountTeamMember> accountTeamMemberMap = new Map<String, AccountTeamMember>();
+
         for(AccountTeamMember accountTeamMember : accountsTeamMembers) {
             accountTeamMemberMap.put(accountTeamMember.AccountId + '-' + accountTeamMember.UserId, accountTeamMember);
         }
